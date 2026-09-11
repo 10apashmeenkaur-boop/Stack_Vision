@@ -28,30 +28,16 @@ main{max-width:1400px;margin:0 auto;padding:22px}
          border-bottom:1px solid var(--line);font-weight:600}
 .body{padding:16px}
 button{background:var(--acc);color:#fff;border:0;border-radius:6px;
-       padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s}
-button:disabled{cursor:not-allowed}
-button.faded-save{
-  background:#21262d !important;
-  color:var(--dim) !important;
-  border:1px solid var(--line) !important;
-  opacity:0.5;
-  cursor:not-allowed;
-}
-button.active-save{
-  background:#238636 !important;
-  color:#fff !important;
-  font-weight:600;
-  cursor:pointer;
-  box-shadow:0 0 12px rgba(35,134,54,0.4);
-}
+       padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer}
+button:disabled{background:#30363d;color:#6e7681;cursor:not-allowed}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
 input[type=file]{color:var(--dim);font-size:13px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #cv{max-width:100%;border:1px solid var(--line);border-radius:6px;cursor:crosshair;
     display:block;background:#000}
 .hint{color:var(--dim);font-size:12px;margin-top:9px}
-.views{display:flex;justify-content:center;gap:14px;margin-top:12px}
-.views img{max-width:100%;height:auto;border-radius:6px;background:#000;display:block;border:1px solid var(--line)}
+.views{display:grid;grid-template-columns:1fr;gap:14px}
+.views img{width:100%;border-radius:6px;background:#000;display:block}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
        gap:12px;margin-bottom:14px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;
@@ -75,10 +61,6 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
 .bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .3s}
 .empty{color:var(--dim);padding:18px 16px;font-size:13px}
 .err{color:var(--reject);font-size:12px;margin-top:8px}
-.msg{color:var(--pass);font-size:12px;margin-top:8px}
-.file-list{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-.file-item{background:#21262d;padding:8px 14px;border:1px solid var(--line);border-radius:6px;font-size:12px;color:var(--ink);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-.file-item:hover{background:var(--acc);color:#fff;border-color:var(--acc)}
 @media(min-width:1000px){.views{grid-template-columns:1fr 1fr}}
 </style>
 </head>
@@ -104,26 +86,27 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
       <div class="row">
         <select id="vlist" style="background:#0d1117;color:var(--ink);
           border:1px solid var(--line);border-radius:6px;padding:8px 10px"></select>
-        <button class="ghost" onclick="loadVideos()">Refresh List</button>
+        <button class="ghost" onclick="loadVideos()">Refresh</button>
       </div>
       <div class="row" style="margin-top:12px">
         <input type="file" id="vfile" accept="video/mp4,video/*">
-        <button onclick="upload()">Upload Video</button>
+        <button onclick="upload()">Upload</button>
       </div>
-      <div class="hint">Upload your own MP4 video to start inspection.</div>
+      <div class="hint">H.264 MP4 works best. The clip needs enough resolution
+        that a slot is ~10 px wide, otherwise millimetres are not measurable.</div>
       <div class="err" id="e1"></div>
     </div>
   </div>
 
   <!-- STEP 2 -->
   <div class="card" id="c2" style="display:none">
-    <h2>Step 2 — mark measurement zones</h2>
+    <h2>Step 2 — mark the measurement zones</h2>
     <div class="body">
       <div class="row">
-        <button onclick="tryAuto()">Detect Automatically</button>
-        <button class="ghost" onclick="undoPt()">Undo Point</button>
-        <button class="ghost" onclick="clearZones()">Clear All</button>
-        <button onclick="saveZones()" id="bsave" class="faded-save" disabled>Save & Approve Zones</button>
+        <button onclick="tryAuto()">Detect automatically</button>
+        <button class="ghost" onclick="undoPt()">Undo point</button>
+        <button class="ghost" onclick="clearZones()">Clear all</button>
+        <button onclick="saveZones()" id="bsave" disabled>Save zones</button>
         <span class="tag" id="zstat">0 zones · 0/4 corners</span>
       </div>
       <div class="hint">Click the 4 corners of one plate in order:
@@ -131,7 +114,6 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
         The 4th click closes that zone and starts the next. Mark 3 plates.</div>
       <canvas id="cv" style="margin-top:12px"></canvas>
       <div class="err" id="e2"></div>
-      <div class="msg" id="m2"></div>
     </div>
   </div>
 
@@ -140,8 +122,11 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
     <h2>Step 3 — inspection</h2>
     <div class="body">
       <div class="row">
-        <button onclick="startRun()" id="brun">Start Inspection</button>
+        <button onclick="startRun()" id="brun">Start inspection</button>
         <button class="ghost" onclick="stopRun()" id="bstop" disabled>Stop</button>
+        <a class="ghost" id="bcsv" style="display:none;padding:9px 18px;
+           border:1px solid var(--line);border-radius:6px;color:var(--ink);
+           text-decoration:none;font-size:13px">Download CSV</a>
         <span class="tag" id="rstat"></span>
       </div>
       <div class="bar"><i id="prog"></i></div>
@@ -160,24 +145,14 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
       <div class="stat"><div class="k">Belt speed</div><div class="v" id="s4">—</div></div>
     </div>
     <div class="zchips" id="zchips"></div>
-
-    <div class="card">
-      <h2>Run Downloads & Artifacts</h2>
-      <div class="body">
-        <div class="hint">Download options for current inspection run:</div>
-        <div class="file-list" id="run-files">
-          <span class="empty">Generating download options...</span>
-        </div>
-      </div>
-    </div>
-
     <div class="card">
       <h2>Plate results</h2>
       <table>
         <thead><tr><th>Zone</th><th>Plate</th><th>Frames</th><th>Width mm</th>
           <th>Std dev</th><th>Slot len</th><th>Verdict</th></tr></thead>
         <tbody id="rows"><tr><td colspan="7" class="empty">
-          A plate is reported once it has fully passed through a zone.</td></tr></tbody>
+          A plate is reported once it has fully passed through a zone —
+          roughly every 150–250 frames.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -187,17 +162,9 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
 const API = '';
 const $ = id => document.getElementById(id);
 let VID=null, IMG=new Image(), SCALE=1, zones=[], cur=[], RID=null, timer=null;
-let unsavedChanges = false;
 
-async function j(u,o){
-  const r=await fetch(API+u,o);
-  if(!r.ok) {
-    let msg = await r.text();
-    try { const parsed = JSON.parse(msg); if(parsed.detail) msg = parsed.detail; } catch(e){}
-    throw new Error(msg.slice(0,200));
-  }
-  return r.json();
-}
+async function j(u,o){ const r=await fetch(API+u,o);
+  if(!r.ok) throw new Error((await r.text()).slice(0,200)); return r.json(); }
 
 (async()=>{ try{ const h=await j('/api/health');
   $('health').textContent=`API ok · ${h.videos} videos`; }
@@ -208,18 +175,8 @@ async function loadVideos(){
     const v=await j('/api/videos');
     $('vlist').innerHTML = v.length
       ? v.map(x=>`<option value="${x.video_id}">${x.name} — ${x.width}x${x.height}, ${x.frames}f${x.has_zones?' ✓zones':''}</option>`).join('')
-      : '<option value="">no videos uploaded — upload your own video</option>';
-    if(v.length) {
-      pick(v[0].video_id);
-    } else {
-      $('c2').style.display='none';
-      $('c3').style.display='none';
-      $('c4').style.display='none';
-      $('st1').className='step on';
-      $('st2').className='step';
-      $('st3').className='step';
-      $('st4').className='step';
-    }
+      : '<option value="">no videos — upload one</option>';
+    if(v.length) pick(v[0].video_id);
   }catch(e){ $('e1').textContent=e.message; }
 }
 $('vlist').onchange = e => pick(e.target.value);
@@ -239,15 +196,9 @@ async function pick(id){
   if(!id) return;
   VID=id; $('st1').className='step ok'; $('st2').className='step on';
   $('c2').style.display=''; $('c3').style.display='';
-  zones=[]; cur=[]; unsavedChanges=false;
-  $('e2').textContent=''; $('m2').textContent='';
-  resetSaveButtonState();
-  try{
-    const v=await j('/api/videos/'+id);
-    if(v.zones && v.zones.plates) {
-      zones=v.zones.plates;
-      markSavedState();
-    }
+  zones=[]; cur=[];
+  try{ const v=await j('/api/videos/'+id);
+       if(v.zones && v.zones.plates) { zones=v.zones.plates; }
   }catch(e){}
   IMG=new Image();
   IMG.onload=()=>{ const cv=$('cv'); const maxw=Math.min(1100,window.innerWidth-80);
@@ -256,133 +207,62 @@ async function pick(id){
   IMG.src=API+`/api/videos/${id}/frame?n=100&t=${Date.now()}`;
 }
 
-function resetSaveButtonState(){
-  const b = $('bsave');
-  if(unsavedChanges && zones.length > 0) {
-    b.className = 'active-save';
-    b.textContent = 'Approve & Save Zones';
-    b.disabled = false;
-  } else if(zones.length > 0) {
-    b.className = 'faded-save';
-    b.textContent = '✓ Zones Saved';
-    b.disabled = true;
-  } else {
-    b.className = 'faded-save';
-    b.textContent = 'Save & Approve Zones';
-    b.disabled = true;
-  }
-}
-
-function markSavedState(){
-  unsavedChanges = false;
-  resetSaveButtonState();
-}
-
 function draw(){
   const cv=$('cv'), x=cv.getContext('2d');
   x.drawImage(IMG,0,0,cv.width,cv.height);
   const cols=['#3fb950','#d29922','#2f81f7','#f85149','#a371f7'];
-  
   zones.forEach((q,i)=>{ x.strokeStyle=cols[i%5]; x.lineWidth=2.5;
     x.beginPath(); q.forEach((p,k)=>{ const X=p[0]*SCALE,Y=p[1]*SCALE;
       k?x.lineTo(X,Y):x.moveTo(X,Y); }); x.closePath(); x.stroke();
     x.fillStyle=cols[i%5]; x.font='bold 15px sans-serif';
     x.fillText('Z'+(i+1), q[0][0]*SCALE+6, q[0][1]*SCALE+19); });
-    
   x.fillStyle='#fff';
   cur.forEach(p=>{ x.beginPath(); x.arc(p[0]*SCALE,p[1]*SCALE,4,0,7); x.fill(); });
-  
   const labels=['top-left','top-right','bottom-right','bottom-left'];
   $('zstat').textContent=`${zones.length} zones · ${cur.length}/4 corners`
     + (cur.length<4?` · next: ${labels[cur.length]}`:'');
-    
-  resetSaveButtonState();
+  $('bsave').disabled = zones.length===0;
 }
 
 $('cv').onclick = e => {
   const r=$('cv').getBoundingClientRect();
   cur.push([(e.clientX-r.left)/SCALE,(e.clientY-r.top)/SCALE]);
-  
-  if(cur.length===4){
-    zones.push(cur);
-    cur=[];
-    unsavedChanges = true;
-  }
+  if(cur.length===4){ zones.push(cur); cur=[]; }
   draw();
 };
-
-function undoPt(){
-  if(cur.length) cur.pop();
-  else if(zones.length) { cur=zones.pop(); unsavedChanges=true; }
-  draw();
-}
-
-async function clearZones(){
-  zones=[]; cur=[]; unsavedChanges=true;
-  if(VID) {
-    try { await fetch(API+`/api/videos/${VID}/zones`, {method: 'DELETE'}); } catch(e){}
-  }
-  $('m2').textContent='Zones cleared. Click 4 corners per plate, or click Detect Automatically.';
-  $('e2').textContent='';
-  draw();
-}
+function undoPt(){ if(cur.length) cur.pop(); else if(zones.length) cur=zones.pop();
+  draw(); }
+function clearZones(){ zones=[]; cur=[]; draw(); }
 
 async function saveZones(){
-  if(zones.length === 0) return;
-  $('e2').textContent=''; $('m2').textContent='Saving & approving zones…';
-  try{
-    await j(`/api/videos/${VID}/zones`,{method:'POST',
+  try{ await j(`/api/videos/${VID}/zones`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({plates:zones,plate_mm:[315,255]})});
     $('st2').className='step ok'; $('st3').className='step on';
-    $('m2').textContent='✓ Zones approved and saved successfully!';
-    markSavedState();
-  }catch(e){
-    $('m2').textContent='';
-    $('e2').textContent='Save failed: ' + e.message;
-    throw e;
-  }
+    $('e2').textContent='';
+  }catch(e){ $('e2').textContent=e.message; }
 }
 
 async function tryAuto(){
-  $('e2').textContent=''; $('m2').textContent='Searching automatically…';
-  try{
-    const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
-    zones=r.zones.map(z=>z.quad); cur=[]; unsavedChanges=true; draw();
-    $('m2').textContent=`✓ Detected ${r.zones.length} zones! Click 'Approve & Save Zones' to confirm.`;
-  }catch(e){
-    $('m2').textContent='';
-    $('e2').textContent='Auto-detect note: ' + e.message + ' — click corners manually.';
-  }
+  $('e2').textContent='searching…';
+  try{ const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
+    zones=r.zones.map(z=>z.quad); cur=[]; draw();
+    $('e2').textContent=`found ${r.zones.length} — check them, adjust if needed`;
+  }catch(e){ $('e2').textContent=e.message+' — click them manually'; }
 }
 
 async function startRun(){
-  $('rstat').textContent='Starting inspection…';
   try{
-    if(unsavedChanges) await saveZones();
+    if(zones.length) await saveZones();
     const r=await j('/api/runs',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({video_id:VID,every:4,min_obs:8,px_per_mm:2})});
     RID=r.run_id; $('brun').disabled=true; $('bstop').disabled=false;
     $('c4').style.display=''; $('st3').className='step ok';
     $('st4').className='step on';
-    loadRunFiles(RID);
+    $('bcsv').style.display=''; $('bcsv').href=`/api/runs/${RID}/report.csv`;
     timer=setInterval(poll,700);
-  }catch(e){ $('rstat').textContent='Failed: ' + e.message; }
-}
-
-async function loadRunFiles(rid){
-  try {
-    const files = await j(`/api/runs/${rid}/files`);
-    const container = $('run-files');
-    if(files && files.length) {
-      container.innerHTML = files.map(f => 
-        `<a class="file-item" href="/api/runs/${rid}/files/${f}" target="_blank">📥 ${f}</a>`
-      ).join('');
-    } else {
-      container.innerHTML = `<a class="file-item" href="/api/runs/${rid}/report.csv" target="_blank">📥 report.csv</a>`;
-    }
-  } catch(e){}
+  }catch(e){ $('rstat').textContent=e.message; }
 }
 
 async function stopRun(){ if(RID) await fetch(`/api/runs/${RID}`,{method:'DELETE'}); }
@@ -408,7 +288,6 @@ async function poll(){
        <td>${r.width_mm.toFixed(2)}</td><td>${r.stdev_mm.toFixed(3)}</td>
        <td>${r.slot_len_mm}</td>
        <td><span class="badge ${r.verdict}">${r.verdict}</span></td></tr>`).join('');
-    loadRunFiles(RID);
     if(s.status==='done'||s.status==='cancelled'){
       clearInterval(timer); $('brun').disabled=false; $('bstop').disabled=true;
       $('st4').className='step ok';
