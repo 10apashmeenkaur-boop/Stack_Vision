@@ -217,6 +217,7 @@ async def get_zones(vid: str):
 
 @app.post("/api/videos/{vid}/autozones")
 async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
+    """Detect zones automatically using original autozone.py algorithm."""
     scan_videos()
     v = VIDEOS.get(vid)
     if not v:
@@ -224,7 +225,7 @@ async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
     try:
         import autozone
     except ImportError:
-        pass
+        raise HTTPException(501, "autozone.py not available")
     gauge.set_plate(315.0, 255.0, px_per_mm)
     cap = cv2.VideoCapture(v["path"])
     cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame - 1))
@@ -234,45 +235,32 @@ async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
         raise HTTPException(400, "cannot read frame from video")
     H, W = img.shape[:2]
     roi = (int(.12*W), int(.04*H), int(.82*W), int(.78*H))
-    
-    found = []
-    try:
-        vx = autozone.vertical_seams(img, roi)
-    except Exception:
-        vx = []
-        
+    vx = autozone.vertical_seams(img, roi)
     if len(vx) < 2:
-        x0, x1 = int(.15 * W), int(.85 * W)
-        step = (x1 - x0) // 3
-        vx = [x0 + i * step for i in range(4)]
-        
+        raise HTTPException(422, "no vertical seams found - annotate manually")
+    found = []
     coarse = max(14, H // 40)
     for i in range(len(vx) - 1):
         xa, xb = vx[i], vx[i+1]
-        if xb - xa < 60:
+        if xb - xa < 80:
             continue
         best = (-1, None, None)
-        for h in range(int(.10*H), int(.35*H), coarse):
+        for h in range(int(.10*H), int(.34*H), coarse):
             for y in range(roi[1], roi[3] - h, coarse):
                 q = [[xa, y], [xb, y], [xb, y+h], [xa, y+h]]
-                try:
-                    s, info = autozone.score(img, q, 0.35, 39)
-                    if s > best[0]:
-                        best = (s, q, info)
-                except Exception:
-                    pass
-        if best[0] >= 0.35 and best[1] is not None:
+                s, info = autozone.score(img, q, 0.35, 39)
+                if s > best[0]:
+                    best = (s, q, info)
+        if best[0] >= 0.55:
             found.append({"quad": [[float(x), float(y)] for x, y in best[1]],
                           "score": round(best[0], 3), "info": best[2]})
-        else:
-            y_mid = int(.20 * H)
-            h_mid = int(.25 * H)
-            fallback_q = [[float(xa), float(y_mid)], [float(xb), float(y_mid)], [float(xb), float(y_mid + h_mid)], [float(xa), float(y_mid + h_mid)]]
-            found.append({"quad": fallback_q, "score": 0.5, "info": {"slot_len_mm": 62.0, "mean_width_mm": 4.0}})
-
-    v["zones"] = {"plates": [f["quad"] for f in found], "plate_mm": [315.0, 255.0]}
-    with open(v["path"] + ".zones.json", "w") as f:
-        json.dump(v["zones"], f, indent=2)
+    if not found:
+        raise HTTPException(422, "nothing scored well enough - annotate manually")
+    VIDEOS[vid]["zones"] = {"plates": [f["quad"] for f in found],
+                            "plate_mm": [315.0, 255.0]}
+    zones_file = v["path"] + ".zones.json"
+    with open(zones_file, "w") as f:
+        json.dump(VIDEOS[vid]["zones"], f, indent=2)
     return {"video_id": vid, "zones": found}
 
 
@@ -377,26 +365,11 @@ async def start_run(req: RunRequest):
     if not v:
         raise HTTPException(404, "unknown video_id")
     
-    # Ensure zones exist via disk fallback or default zones
     if not v["zones"]:
         v["zones"] = load_zones_for_video(v["path"])
         
     if not v["zones"]:
-        cap = cv2.VideoCapture(v["path"])
-        W = int(cap.get(3)) if cap.isOpened() else 1280
-        H = int(cap.get(4)) if cap.isOpened() else 720
-        cap.release()
-        x0, x1 = int(.15 * W), int(.85 * W)
-        step = (x1 - x0) // 3
-        y_mid, h_mid = int(.20 * H), int(.25 * H)
-        default_plates = []
-        for i in range(3):
-            xa, xb = x0 + i * step, x0 + (i + 1) * step
-            default_plates.append([[float(xa), float(y_mid)], [float(xb), float(y_mid)],
-                                  [float(xb), float(y_mid + h_mid)], [float(xa), float(y_mid + h_mid)]])
-        v["zones"] = {"plates": default_plates, "plate_mm": [315.0, 255.0]}
-        with open(v["path"] + ".zones.json", "w") as f:
-            json.dump(v["zones"], f, indent=2)
+        raise HTTPException(409, "no zones for this video - POST zones first, or call /autozones")
 
     rid = uuid.uuid4().hex[:12]
     RUNS[rid] = {"run_id": rid, "video_id": req.video_id, "status": "starting",

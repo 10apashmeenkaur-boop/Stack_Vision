@@ -117,7 +117,7 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
 
   <!-- STEP 2 -->
   <div class="card" id="c2" style="display:none">
-    <h2>Step 2 — mark measurement zones (4-corner rectangles)</h2>
+    <h2>Step 2 — mark measurement zones</h2>
     <div class="body">
       <div class="row">
         <button onclick="tryAuto()">Detect Automatically</button>
@@ -126,8 +126,9 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
         <button onclick="saveZones()" id="bsave" class="faded-save" disabled>Save & Approve Zones</button>
         <span class="tag" id="zstat">0 zones · 0/4 corners</span>
       </div>
-      <div class="hint">Click 4 corners for each rectangular plate:
-        <b>top-left → top-right → bottom-right → bottom-left</b>.</div>
+      <div class="hint">Click the 4 corners of one plate in order:
+        <b>top-left → top-right → bottom-right → bottom-left</b>.
+        The 4th click closes that zone and starts the next. Mark 3 plates.</div>
       <canvas id="cv" style="margin-top:12px"></canvas>
       <div class="err" id="e2"></div>
       <div class="msg" id="m2"></div>
@@ -282,28 +283,17 @@ function draw(){
   x.drawImage(IMG,0,0,cv.width,cv.height);
   const cols=['#3fb950','#d29922','#2f81f7','#f85149','#a371f7'];
   
-  zones.forEach((q,i)=>{
-    if(q.length === 4) {
-      x.strokeStyle=cols[i%5]; x.lineWidth=2.5;
-      x.beginPath();
-      q.forEach((p,k)=>{ const X=p[0]*SCALE,Y=p[1]*SCALE; k?x.lineTo(X,Y):x.moveTo(X,Y); });
-      x.closePath(); x.stroke();
-      x.fillStyle=cols[i%5]; x.font='bold 15px sans-serif';
-      x.fillText('Z'+(i+1), q[0][0]*SCALE+6, q[0][1]*SCALE+19);
-    }
-  });
-
+  zones.forEach((q,i)=>{ x.strokeStyle=cols[i%5]; x.lineWidth=2.5;
+    x.beginPath(); q.forEach((p,k)=>{ const X=p[0]*SCALE,Y=p[1]*SCALE;
+      k?x.lineTo(X,Y):x.moveTo(X,Y); }); x.closePath(); x.stroke();
+    x.fillStyle=cols[i%5]; x.font='bold 15px sans-serif';
+    x.fillText('Z'+(i+1), q[0][0]*SCALE+6, q[0][1]*SCALE+19); });
+    
   x.fillStyle='#fff';
-  cur.forEach(p=>{ x.beginPath(); x.arc(p[0]*SCALE,p[1]*SCALE,5,0,7); x.fill(); });
-  if(cur.length > 1) {
-    x.strokeStyle='#ffffff'; x.lineWidth=1.5; x.setLineDash([4,4]);
-    x.beginPath();
-    cur.forEach((p,k)=>{ const X=p[0]*SCALE,Y=p[1]*SCALE; k?x.lineTo(X,Y):x.moveTo(X,Y); });
-    x.stroke(); x.setLineDash([]);
-  }
-
+  cur.forEach(p=>{ x.beginPath(); x.arc(p[0]*SCALE,p[1]*SCALE,4,0,7); x.fill(); });
+  
   const labels=['top-left','top-right','bottom-right','bottom-left'];
-  $('zstat').textContent=`${zones.length} rectangles · ${cur.length}/4 corners`
+  $('zstat').textContent=`${zones.length} zones · ${cur.length}/4 corners`
     + (cur.length<4?` · next: ${labels[cur.length]}`:'');
     
   resetSaveButtonState();
@@ -354,10 +344,10 @@ async function tryAuto(){
   try{
     const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
     zones=r.zones.map(z=>z.quad); cur=[]; unsavedChanges=true; draw();
-    $('m2').textContent=`✓ Detected ${r.zones.length} rectangles! Click 'Approve & Save Zones' to confirm.`;
+    $('m2').textContent=`✓ Detected ${r.zones.length} zones! Click 'Approve & Save Zones' to confirm.`;
   }catch(e){
     $('m2').textContent='';
-    $('e2').textContent='Auto-detect note: ' + e.message;
+    $('e2').textContent='Auto-detect note: ' + e.message + ' — click corners manually.';
   }
 }
 
