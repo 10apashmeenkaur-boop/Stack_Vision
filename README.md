@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Hira Vision — grate slot inspection
 
 Measures slot width in millimetres on rotating grate plates from CCTV, and
@@ -128,6 +127,3 @@ clip. Lower `--min-obs`.
 **PermissionError on a CSV** — it's open in Excel. Close it.
 
 **Slow** — `--px-per-mm 2 --every 4 --no-window`.
-=======
-# Stack_Vision
->>>>>>> 20194e90233c25498229971b920a5c6df477bddc

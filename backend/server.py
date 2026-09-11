@@ -17,6 +17,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response
 import uvicorn
 
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
+
 import gauge
 import openarea
 from video_gauge import vprofile, profile_shift
@@ -34,16 +37,18 @@ def jpg(img, q=70):
 @app.get("/")
 async def index():
     import os
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
-    if not os.path.exists(p):
-        return HTMLResponse(
-            "<h2>index.html not found</h2>"
-            f"<p>Expected it at:<br><code>{p}</code></p>"
-            "<p>Put index.html in the same folder as server.py.</p>"
-            "<p>The API still works: "
-            "<a href='/report.csv'>/report.csv</a> and ws://localhost:8000/ws"
-            "</p>", status_code=200)
-    return HTMLResponse(open(p, encoding="utf-8").read())
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    frontend_dir = os.path.join(PROJECT_ROOT, "frontend")
+    for name in ("index.html", "app.html"):
+        p = os.path.join(frontend_dir, name)
+        if os.path.exists(p):
+            return HTMLResponse(open(p, encoding="utf-8").read())
+    return HTMLResponse(
+        "<h2>index.html not found</h2>"
+        f"<p>Expected it at:<br><code>{frontend_dir}</code></p>"
+        "<p>The API still works: "
+        "<a href='/report.csv'>/report.csv</a> and ws://localhost:8000/ws"
+        "</p>", status_code=200)
 
 
 @app.get("/report.csv")
