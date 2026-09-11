@@ -31,6 +31,7 @@ button{background:var(--acc);color:#fff;border:0;border-radius:6px;
        padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s}
 button:disabled{background:#30363d;color:#6e7681;cursor:not-allowed}
 button.saved{background:#238636!important;color:#fff!important;cursor:default}
+button.approve{background:#238636!important;color:#fff!important;font-weight:600}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
 input[type=file]{color:var(--dim);font-size:13px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -104,18 +105,17 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
 
   <!-- STEP 2 -->
   <div class="card" id="c2" style="display:none">
-    <h2>Step 2 — mark the measurement zones (4-corner rectangles)</h2>
+    <h2>Step 2 — mark measurement zones (4-corner rectangles)</h2>
     <div class="body">
       <div class="row">
         <button onclick="tryAuto()">Detect Automatically</button>
         <button class="ghost" onclick="undoPt()">Undo Point</button>
         <button class="ghost" onclick="clearZones()">Clear All</button>
-        <button onclick="saveZones()" id="bsave" disabled>Save Zones</button>
+        <button onclick="saveZones()" id="bsave" class="approve" disabled>Approve & Save Zones</button>
         <span class="tag" id="zstat">0 zones · 0/4 corners</span>
       </div>
-      <div class="hint">Click exactly 4 corners for each rectangular plate:
-        <b>top-left → top-right → bottom-right → bottom-left</b>.
-        The 4th click closes the rectangle.</div>
+      <div class="hint">Click 4 corners for each rectangular plate:
+        <b>top-left → top-right → bottom-right → bottom-left</b>.</div>
       <canvas id="cv" style="margin-top:12px"></canvas>
       <div class="err" id="e2"></div>
       <div class="msg" id="m2"></div>
@@ -235,16 +235,16 @@ async function pick(id){
 
 function resetSaveButtonState(){
   const b = $('bsave');
-  b.className = '';
-  b.textContent = 'Save Zones';
-  b.disabled = zones.length === 0 || !unsavedChanges;
+  b.className = 'approve';
+  b.textContent = 'Approve & Save Zones';
+  b.disabled = zones.length === 0;
 }
 
 function markSavedState(){
   unsavedChanges = false;
   const b = $('bsave');
   b.className = 'saved';
-  b.textContent = '✓ Zones Saved';
+  b.textContent = '✓ Zones Approved & Saved';
   b.disabled = true;
 }
 
@@ -253,7 +253,6 @@ function draw(){
   x.drawImage(IMG,0,0,cv.width,cv.height);
   const cols=['#3fb950','#d29922','#2f81f7','#f85149','#a371f7'];
   
-  // Draw established 4-corner rectangles
   zones.forEach((q,i)=>{
     if(q.length === 4) {
       x.strokeStyle=cols[i%5]; x.lineWidth=2.5;
@@ -265,7 +264,6 @@ function draw(){
     }
   });
 
-  // Draw current points being clicked (1 to 3 corners)
   x.fillStyle='#fff';
   cur.forEach(p=>{ x.beginPath(); x.arc(p[0]*SCALE,p[1]*SCALE,5,0,7); x.fill(); });
   if(cur.length > 1) {
@@ -279,14 +277,15 @@ function draw(){
   $('zstat').textContent=`${zones.length} rectangles · ${cur.length}/4 corners`
     + (cur.length<4?` · next: ${labels[cur.length]}`:'');
     
-  resetSaveButtonState();
+  if(unsavedChanges) {
+    resetSaveButtonState();
+  }
 }
 
 $('cv').onclick = e => {
   const r=$('cv').getBoundingClientRect();
   cur.push([(e.clientX-r.left)/SCALE,(e.clientY-r.top)/SCALE]);
   
-  // Strictly enforce 4 corners for a rectangle
   if(cur.length===4){
     zones.push(cur);
     cur=[];
@@ -308,13 +307,13 @@ function clearZones(){
 
 async function saveZones(){
   if(zones.length === 0) return;
-  $('e2').textContent=''; $('m2').textContent='Saving zones…';
+  $('e2').textContent=''; $('m2').textContent='Saving & approving zones…';
   try{
     await j(`/api/videos/${VID}/zones`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({plates:zones,plate_mm:[315,255]})});
     $('st2').className='step ok'; $('st3').className='step on';
-    $('m2').textContent='✓ Zones saved successfully!';
+    $('m2').textContent='✓ Zones approved and saved successfully!';
     markSavedState();
   }catch(e){
     $('m2').textContent='';
@@ -328,8 +327,7 @@ async function tryAuto(){
   try{
     const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
     zones=r.zones.map(z=>z.quad); cur=[]; unsavedChanges=true; draw();
-    $('m2').textContent=`✓ Detected ${r.zones.length} rectangles! Adjust if needed.`;
-    await saveZones();
+    $('m2').textContent=`✓ Detected ${r.zones.length} rectangles! Click 'Approve & Save Zones' to confirm.`;
   }catch(e){
     $('m2').textContent='';
     $('e2').textContent='Auto-detect note: ' + e.message;
@@ -339,7 +337,7 @@ async function tryAuto(){
 async function startRun(){
   $('rstat').textContent='Starting inspection…';
   try{
-    if(unsavedChanges && zones.length) await saveZones();
+    await saveZones();
     const r=await j('/api/runs',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({video_id:VID,every:4,min_obs:8,px_per_mm:2})});

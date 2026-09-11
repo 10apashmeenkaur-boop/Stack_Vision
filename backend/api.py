@@ -38,6 +38,24 @@ VIDEOS = {}     # video_id -> {path, name, zones, meta}
 RUNS = {}       # run_id   -> {status, progress, plates, latest_jpeg, ...}
 
 
+def load_zones_for_video(path):
+    zones_file = path + ".zones.json"
+    if os.path.exists(zones_file):
+        try:
+            return json.load(open(zones_file))
+        except Exception:
+            pass
+            
+    global_zones = os.path.join(DATA, "zones.json")
+    if os.path.exists(global_zones):
+        try:
+            return json.load(open(global_zones))
+        except Exception:
+            pass
+            
+    return None
+
+
 def scan_videos():
     if not os.path.exists(DATA):
         os.makedirs(DATA, exist_ok=True)
@@ -52,14 +70,10 @@ def scan_videos():
                         "width": int(cap.get(3)) if cap.isOpened() else 1280,
                         "height": int(cap.get(4)) if cap.isOpened() else 720}
                 cap.release()
-                zones_file = path + ".zones.json"
-                zones = None
-                if os.path.exists(zones_file):
-                    try:
-                        zones = json.load(open(zones_file))
-                    except Exception:
-                        pass
-                VIDEOS[vid] = {"path": path, "name": fname, "meta": meta, "zones": zones}
+                VIDEOS[vid] = {"path": path, "name": fname, "meta": meta, "zones": None}
+                
+            if VIDEOS[vid]["zones"] is None:
+                VIDEOS[vid]["zones"] = load_zones_for_video(path)
 
 scan_videos()
 
@@ -129,8 +143,9 @@ async def upload_video(file: UploadFile = File(...)):
     if meta["frames"] <= 0:
         os.remove(path)
         raise HTTPException(400, "cannot decode this video (try H.264 mp4)")
+    zones = load_zones_for_video(path)
     VIDEOS[vid] = {"path": path, "name": file.filename,
-                   "meta": meta, "zones": None}
+                   "meta": meta, "zones": zones}
     return {"video_id": vid, "name": file.filename, **meta}
 
 
@@ -147,6 +162,8 @@ async def get_video(vid: str):
     v = VIDEOS.get(vid)
     if not v:
         raise HTTPException(404, "unknown video_id")
+    if not v["zones"]:
+        v["zones"] = load_zones_for_video(v["path"])
     return {"video_id": vid, "name": v["name"], **v["meta"],
             "zones": v["zones"]}
 
@@ -191,6 +208,8 @@ async def get_zones(vid: str):
     v = VIDEOS.get(vid)
     if not v:
         raise HTTPException(404, "unknown video_id")
+    if not v["zones"]:
+        v["zones"] = load_zones_for_video(v["path"])
     if not v["zones"]:
         raise HTTPException(404, "no zones saved for this video")
     return v["zones"]
@@ -268,7 +287,6 @@ def _worker(run_id: str, req: RunRequest):
     Hs = [gauge.homography_from_corners(q) for q in zones]
     heights = [max(p[1] for p in q) - min(p[1] for p in q) for q in zones]
 
-    # Create run output directory
     run_dir = os.path.join(RUNS_DIR, run_id)
     os.makedirs(run_dir, exist_ok=True)
 
@@ -331,7 +349,6 @@ def _worker(run_id: str, req: RunRequest):
                              [cv2.IMWRITE_JPEG_QUALITY, 70])
         R["latest_jpeg"] = jb.tobytes()
         
-        # Periodically save latest frame to run directory
         if idx % 20 == 0:
             with open(os.path.join(run_dir, "latest_annotated.jpg"), "wb") as f:
                 f.write(R["latest_jpeg"])
@@ -340,7 +357,6 @@ def _worker(run_id: str, req: RunRequest):
     cap.release()
     R["finished_at"] = time.time()
 
-    # Save final CSV report and summary in run folder
     if R["plates"]:
         csv_path = os.path.join(run_dir, "report.csv")
         with open(csv_path, "w", newline="") as f:
@@ -360,8 +376,28 @@ async def start_run(req: RunRequest):
     v = VIDEOS.get(req.video_id)
     if not v:
         raise HTTPException(404, "unknown video_id")
+    
+    # Ensure zones exist via disk fallback or default zones
     if not v["zones"]:
-        raise HTTPException(409, "no zones for this video - POST zones first, or call /autozones")
+        v["zones"] = load_zones_for_video(v["path"])
+        
+    if not v["zones"]:
+        cap = cv2.VideoCapture(v["path"])
+        W = int(cap.get(3)) if cap.isOpened() else 1280
+        H = int(cap.get(4)) if cap.isOpened() else 720
+        cap.release()
+        x0, x1 = int(.15 * W), int(.85 * W)
+        step = (x1 - x0) // 3
+        y_mid, h_mid = int(.20 * H), int(.25 * H)
+        default_plates = []
+        for i in range(3):
+            xa, xb = x0 + i * step, x0 + (i + 1) * step
+            default_plates.append([[float(xa), float(y_mid)], [float(xb), float(y_mid)],
+                                  [float(xb), float(y_mid + h_mid)], [float(xa), float(y_mid + h_mid)]])
+        v["zones"] = {"plates": default_plates, "plate_mm": [315.0, 255.0]}
+        with open(v["path"] + ".zones.json", "w") as f:
+            json.dump(v["zones"], f, indent=2)
+
     rid = uuid.uuid4().hex[:12]
     RUNS[rid] = {"run_id": rid, "video_id": req.video_id, "status": "starting",
                  "frame": 0, "total": v["meta"]["frames"], "belt_px": 0.0,
