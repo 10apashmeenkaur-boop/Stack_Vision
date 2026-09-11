@@ -29,9 +29,21 @@ main{max-width:1400px;margin:0 auto;padding:22px}
 .body{padding:16px}
 button{background:var(--acc);color:#fff;border:0;border-radius:6px;
        padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s}
-button:disabled{background:#30363d;color:#6e7681;cursor:not-allowed}
-button.saved{background:#238636!important;color:#fff!important;cursor:default}
-button.approve{background:#238636!important;color:#fff!important;font-weight:600}
+button:disabled{cursor:not-allowed}
+button.faded-save{
+  background:#21262d !important;
+  color:var(--dim) !important;
+  border:1px solid var(--line) !important;
+  opacity:0.5;
+  cursor:not-allowed;
+}
+button.active-save{
+  background:#238636 !important;
+  color:#fff !important;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow:0 0 12px rgba(35,134,54,0.4);
+}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
 input[type=file]{color:var(--dim);font-size:13px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -98,7 +110,7 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
         <input type="file" id="vfile" accept="video/mp4,video/*">
         <button onclick="upload()">Upload Video</button>
       </div>
-      <div class="hint">H.264 MP4 works best.</div>
+      <div class="hint">Upload your own MP4 video to start inspection.</div>
       <div class="err" id="e1"></div>
     </div>
   </div>
@@ -111,7 +123,7 @@ td{padding:8px 16px;border-bottom:1px solid #1c2229}
         <button onclick="tryAuto()">Detect Automatically</button>
         <button class="ghost" onclick="undoPt()">Undo Point</button>
         <button class="ghost" onclick="clearZones()">Clear All</button>
-        <button onclick="saveZones()" id="bsave" class="approve" disabled>Approve & Save Zones</button>
+        <button onclick="saveZones()" id="bsave" class="faded-save" disabled>Save & Approve Zones</button>
         <span class="tag" id="zstat">0 zones · 0/4 corners</span>
       </div>
       <div class="hint">Click 4 corners for each rectangular plate:
@@ -195,8 +207,18 @@ async function loadVideos(){
     const v=await j('/api/videos');
     $('vlist').innerHTML = v.length
       ? v.map(x=>`<option value="${x.video_id}">${x.name} — ${x.width}x${x.height}, ${x.frames}f${x.has_zones?' ✓zones':''}</option>`).join('')
-      : '<option value="">no videos — upload one</option>';
-    if(v.length) pick(v[0].video_id);
+      : '<option value="">no videos uploaded — upload your own video</option>';
+    if(v.length) {
+      pick(v[0].video_id);
+    } else {
+      $('c2').style.display='none';
+      $('c3').style.display='none';
+      $('c4').style.display='none';
+      $('st1').className='step on';
+      $('st2').className='step';
+      $('st3').className='step';
+      $('st4').className='step';
+    }
   }catch(e){ $('e1').textContent=e.message; }
 }
 $('vlist').onchange = e => pick(e.target.value);
@@ -235,17 +257,24 @@ async function pick(id){
 
 function resetSaveButtonState(){
   const b = $('bsave');
-  b.className = 'approve';
-  b.textContent = 'Approve & Save Zones';
-  b.disabled = zones.length === 0;
+  if(unsavedChanges && zones.length > 0) {
+    b.className = 'active-save';
+    b.textContent = 'Approve & Save Zones';
+    b.disabled = false;
+  } else if(zones.length > 0) {
+    b.className = 'faded-save';
+    b.textContent = '✓ Zones Saved';
+    b.disabled = true;
+  } else {
+    b.className = 'faded-save';
+    b.textContent = 'Save & Approve Zones';
+    b.disabled = true;
+  }
 }
 
 function markSavedState(){
   unsavedChanges = false;
-  const b = $('bsave');
-  b.className = 'saved';
-  b.textContent = '✓ Zones Approved & Saved';
-  b.disabled = true;
+  resetSaveButtonState();
 }
 
 function draw(){
@@ -277,9 +306,7 @@ function draw(){
   $('zstat').textContent=`${zones.length} rectangles · ${cur.length}/4 corners`
     + (cur.length<4?` · next: ${labels[cur.length]}`:'');
     
-  if(unsavedChanges) {
-    resetSaveButtonState();
-  }
+  resetSaveButtonState();
 }
 
 $('cv').onclick = e => {
@@ -337,7 +364,7 @@ async function tryAuto(){
 async function startRun(){
   $('rstat').textContent='Starting inspection…';
   try{
-    await saveZones();
+    if(unsavedChanges) await saveZones();
     const r=await j('/api/runs',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({video_id:VID,every:4,min_obs:8,px_per_mm:2})});

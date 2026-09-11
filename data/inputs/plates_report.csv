@@ -1,2 +1,0 @@
-frame,plate,n_holes,median_mm,p95_mm,max_mm,reject_pct,verdict,val_length_mm,val_error_pct,trusted
-100,1,2,5.2,3.4,7.0,50.0,REJECT,66.3,6.9,True
