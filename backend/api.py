@@ -346,8 +346,8 @@ def _worker(run_id: str, req: RunRequest):
             live.append({"zone": zi+1, "mm": round(cur,2) if cur else None,
                          "n": len(buf[zi]), "slot_len_mm": round(slen,1)})
 
-        _, jb = cv2.imencode(".jpg", cv2.resize(vis, (W//3, Hh//3)),
-                             [cv2.IMWRITE_JPEG_QUALITY, 70])
+        # High quality crisp preview
+        _, jb = cv2.imencode(".jpg", vis, [cv2.IMWRITE_JPEG_QUALITY, 85])
         R["latest_jpeg"] = jb.tobytes()
         
         if idx % 20 == 0:
