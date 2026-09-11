@@ -173,14 +173,24 @@ async function j(u,o){ const r=await fetch(API+u,o);
 async function loadVideos(){
   try{
     const v=await j('/api/videos');
-    $('vlist').innerHTML = v.length
-      ? v.map(x=>`<option value="${x.video_id}">${x.name} — ${x.width}x${x.height}, ${x.frames}f${x.has_zones?' ✓zones':''}</option>`).join('')
-      : '<option value="">no videos — upload one</option>';
-    if(v.length) pick(v[0].video_id);
+    $('vlist').innerHTML = '<option value="">-- Choose a video --</option>' + (v.length
+      ? v.map(x=>`<option value="${x.video_id}">${x.name} (${x.width}x${x.height}, ${x.frames}f${x.has_zones?' ✓zones':''})</option>`).join('')
+      : '<option value="">No videos uploaded yet</option>');
   }catch(e){ $('e1').textContent=e.message; }
 }
-$('vlist').onchange = e => pick(e.target.value);
+$('vlist').onchange = e => {
+  if (e.target.value) pick(e.target.value);
+  else resetView();
+};
 loadVideos();
+
+function resetView(){
+  VID=null;
+  $('st1').className='step on'; $('st2').className='step';
+  $('st3').className='step'; $('st4').className='step';
+  $('c2').style.display='none'; $('c3').style.display='none'; $('c4').style.display='none';
+  zones=[]; cur=[];
+}
 
 async function upload(){
   const f=$('vfile').files[0];
@@ -188,12 +198,14 @@ async function upload(){
   $('e1').textContent='uploading…';
   const fd=new FormData(); fd.append('file',f);
   try{ const r=await j('/api/videos',{method:'POST',body:fd});
-    $('e1').textContent=''; await loadVideos(); pick(r.video_id);
+    $('e1').textContent=''; await loadVideos();
+    $('vlist').value = r.video_id;
+    pick(r.video_id);
   }catch(e){ $('e1').textContent=e.message; }
 }
 
 async function pick(id){
-  if(!id) return;
+  if(!id) return resetView();
   VID=id; $('st1').className='step ok'; $('st2').className='step on';
   $('c2').style.display=''; $('c3').style.display='';
   zones=[]; cur=[];
@@ -209,6 +221,11 @@ async function pick(id){
 
 function draw(){
   const cv=$('cv'), x=cv.getContext('2d');
+  if (!IMG.width) {
+    x.fillStyle = '#161b22';
+    x.fillRect(0,0,cv.width,cv.height);
+    return;
+  }
   x.drawImage(IMG,0,0,cv.width,cv.height);
   const cols=['#3fb950','#d29922','#2f81f7','#f85149','#a371f7'];
   zones.forEach((q,i)=>{ x.strokeStyle=cols[i%5]; x.lineWidth=2.5;
@@ -225,6 +242,7 @@ function draw(){
 }
 
 $('cv').onclick = e => {
+  if (!VID) return;
   const r=$('cv').getBoundingClientRect();
   cur.push([(e.clientX-r.left)/SCALE,(e.clientY-r.top)/SCALE]);
   if(cur.length >= 4){
@@ -248,12 +266,12 @@ async function saveZones(){
 }
 
 async function tryAuto(){
-  $('e2').textContent='searching…';
+  $('e2').textContent='searching horizontal rows…';
   try{ const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
     zones=r.zones.map(z=>z.quad); cur=[]; draw();
-    $('e2').textContent=`found ${r.zones.length} — check them, adjust if needed`;
+    $('e2').textContent=`Detected ${r.zones.length} aligned plates on horizontal row (scores: ${r.zones.map(z=>z.score).join(', ')})`;
     await saveZones();
-  }catch(e){ $('e2').textContent=e.message+' — click them manually'; }
+  }catch(e){ $('e2').textContent=e.message+' — mark corners manually'; }
 }
 
 async function startRun(){
@@ -282,16 +300,18 @@ async function poll(){
     $('s1').textContent=s.summary.plates;
     $('s2').textContent=s.summary.median_mm?s.summary.median_mm.toFixed(2)+' mm':'—';
     $('s3').textContent=s.summary.plates?s.summary.reject_pct+'%':'—';
-    $('s4').textContent=s.belt_px.toFixed(1)+' px/f';
+    const beltSpeed = (s.belt_m_min !== undefined) ? `${s.belt_m_min.toFixed(2)} m/min (${s.belt_px.toFixed(1)} px/f)` : `${s.belt_px.toFixed(1)} px/f`;
+    $('s4').textContent=beltSpeed;
     $('zchips').innerHTML=(s.live||[]).map(z=>{
       const c=z.mm==null?'var(--dim)':z.mm<=5?'var(--pass)':z.mm<=6?'var(--watch)':'var(--reject)';
-      return `<div class="zc"><div class="n">Zone ${z.zone} · ${z.n} frames · slot ${z.slot_len_mm}mm</div>
+      const slenWarn = (z.slot_len_mm < 55 || z.slot_len_mm > 85) ? ' ⚠️ check zone' : '';
+      return `<div class="zc"><div class="n">Zone ${z.zone} · ${z.n} frames · slot ${z.slot_len_mm}mm${slenWarn}</div>
       <div class="v" style="color:${c}">${z.mm==null?'—':z.mm.toFixed(2)+' mm'}</div></div>`;}).join('');
     const p=await j(`/api/runs/${RID}/plates`);
     if(p.count) $('rows').innerHTML=p.plates.slice().reverse().map(r=>
       `<tr><td>${r.zone}</td><td>${r.plate}</td><td>${r.n_obs}</td>
        <td>${r.width_mm.toFixed(2)}</td><td>${r.stdev_mm.toFixed(3)}</td>
-       <td>${r.slot_len_mm}</td>
+       <td>${r.slot_len_mm} mm</td>
        <td><span class="badge ${r.verdict}">${r.verdict}</span></td></tr>`).join('');
     if(s.status==='done'||s.status==='cancelled'){
       clearInterval(timer); $('brun').disabled=false; $('bstop').disabled=true;

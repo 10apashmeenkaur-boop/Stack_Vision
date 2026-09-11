@@ -392,7 +392,11 @@ def _worker(run_id: str, req: RunRequest):
             with open(os.path.join(run_dir, "latest_annotated.jpg"), "wb") as f:
                 f.write(R["latest_jpeg"])
 
-        R.update(frame=idx, belt_px=round(dy,2), live=live)
+        fps = v["meta"].get("fps", 24.0)
+        dy_frame = dy / max(1, req.every)
+        belt_m_min = (dy_frame * fps * 60.0) / (PPM * 1000.0)
+
+        R.update(frame=idx, belt_px=round(dy,2), belt_m_min=round(belt_m_min, 2), live=live)
     cap.release()
     R["finished_at"] = time.time()
 
@@ -424,7 +428,7 @@ async def start_run(req: RunRequest):
 
     rid = uuid.uuid4().hex[:12]
     RUNS[rid] = {"run_id": rid, "video_id": req.video_id, "status": "starting",
-                 "frame": 0, "total": v["meta"]["frames"], "belt_px": 0.0,
+                 "frame": 0, "total": v["meta"]["frames"], "belt_px": 0.0, "belt_m_min": 0.0,
                  "live": [], "plates": [], "latest_jpeg": None,
                  "started_at": time.time(), "params": req.model_dump()}
     threading.Thread(target=_worker, args=(rid, req), daemon=True).start()
@@ -446,7 +450,7 @@ async def run_status(rid: str):
     return {"run_id": rid, "status": r["status"],
             "frame": r["frame"], "total": r["total"],
             "progress": round(100*r["frame"]/max(1,r["total"]), 1),
-            "belt_px": r["belt_px"], "live": r["live"],
+            "belt_px": r["belt_px"], "belt_m_min": r.get("belt_m_min", 0.0), "live": r["live"],
             "summary": {"plates": len(ws),
                         "median_mm": round(st.median(ws),2) if ws else None,
                         "reject_pct": round(100*sum(
