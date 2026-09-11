@@ -317,8 +317,13 @@ function undoPt(){
   draw();
 }
 
-function clearZones(){
+async function clearZones(){
   zones=[]; cur=[]; unsavedChanges=true;
+  if(VID) {
+    try { await fetch(API+`/api/videos/${VID}/zones`, {method: 'DELETE'}); } catch(e){}
+  }
+  $('m2').textContent='Zones cleared. Click 4 corners per plate, or click Detect Automatically.';
+  $('e2').textContent='';
   draw();
 }
 

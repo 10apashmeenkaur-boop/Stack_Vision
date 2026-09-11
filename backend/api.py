@@ -215,6 +215,19 @@ async def get_zones(vid: str):
     return v["zones"]
 
 
+@app.delete("/api/videos/{vid}/zones")
+async def delete_zones(vid: str):
+    scan_videos()
+    v = VIDEOS.get(vid)
+    if not v:
+        raise HTTPException(404, "unknown video_id")
+    v["zones"] = None
+    zones_file = v["path"] + ".zones.json"
+    if os.path.exists(zones_file):
+        os.remove(zones_file)
+    return {"ok": True, "video_id": vid}
+
+
 @app.post("/api/videos/{vid}/autozones")
 async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
     """Detect zones automatically using original autozone.py algorithm."""
