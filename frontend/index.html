@@ -227,7 +227,10 @@ function draw(){
 $('cv').onclick = e => {
   const r=$('cv').getBoundingClientRect();
   cur.push([(e.clientX-r.left)/SCALE,(e.clientY-r.top)/SCALE]);
-  if(cur.length===4){ zones.push(cur); cur=[]; }
+  if(cur.length >= 4){
+    zones.push(cur.slice(0, 4));
+    cur=[];
+  }
   draw();
 };
 function undoPt(){ if(cur.length) cur.pop(); else if(zones.length) cur=zones.pop();
@@ -235,11 +238,12 @@ function undoPt(){ if(cur.length) cur.pop(); else if(zones.length) cur=zones.pop
 function clearZones(){ zones=[]; cur=[]; draw(); }
 
 async function saveZones(){
+  if(!zones.length) return;
   try{ await j(`/api/videos/${VID}/zones`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({plates:zones,plate_mm:[315,255]})});
     $('st2').className='step ok'; $('st3').className='step on';
-    $('e2').textContent='';
+    $('e2').textContent='Zones saved successfully!';
   }catch(e){ $('e2').textContent=e.message; }
 }
 
@@ -248,6 +252,7 @@ async function tryAuto(){
   try{ const r=await j(`/api/videos/${VID}/autozones`,{method:'POST'});
     zones=r.zones.map(z=>z.quad); cur=[]; draw();
     $('e2').textContent=`found ${r.zones.length} — check them, adjust if needed`;
+    await saveZones();
   }catch(e){ $('e2').textContent=e.message+' — click them manually'; }
 }
 

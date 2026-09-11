@@ -105,41 +105,73 @@ def main():
     if len(vx) < 2:
         raise SystemExit("too few seams - the ROI may be wrong for this camera")
 
-    cands = []
+    cols = []
     for i in range(len(vx) - 1):
         xa, xb = vx[i], vx[i + 1]
-        if xb - xa < 80:
-            continue
-        best = (-1, None, None)
-        # search vertical position and height; the horizontal seams are
-        # curved (fisheye) so they cannot be detected - only searched for
-        for h in range(int(.10 * Hh), int(.34 * Hh), max(6, Hh // 90)):
-            for y in range(roi[1], roi[3] - h, max(6, Hh // 90)):
+        if xb - xa >= 80:
+            cols.append((xa, xb))
+
+    if not cols:
+        raise SystemExit("no valid columns between seams")
+
+    step = max(6, Hh // 90)
+    best_row = (-1, None, None, None)
+
+    for h in range(int(.10 * Hh), int(.34 * Hh), step):
+        for y in range(roi[1], roi[3] - h, step):
+            scores = []
+            infos = []
+            for xa, xb in cols:
                 quad = [[xa, y], [xb, y], [xb, y + h], [xa, y + h]]
                 s, info = score(frame, quad, a.dark, a.slots)
-                if s > best[0]:
-                    best = (s, quad, info)
-        if best[0] >= a.min_score:
-            cands.append(best)
-            print(f"  column {i+1} (x {xa}-{xb}): score {best[0]:.2f}  "
-                  f"{best[2]}")
-        else:
-            print(f"  column {i+1} (x {xa}-{xb}): best score "
-                  f"{best[0]:.2f} - rejected")
+                scores.append(s)
+                infos.append(info)
+            valid = [s for s in scores if s > 0]
+            if len(valid) == len(cols):
+                avg_s = sum(valid) / len(valid)
+                if avg_s > best_row[0]:
+                    best_row = (avg_s, y, h, (scores, infos))
 
-    if not cands:
+    if best_row[0] < a.min_score:
+        for h in range(int(.10 * Hh), int(.34 * Hh), step):
+            for y in range(roi[1], roi[3] - h, step):
+                scores = []
+                infos = []
+                for xa, xb in cols:
+                    quad = [[xa, y], [xb, y], [xb, y + h], [xa, y + h]]
+                    s, info = score(frame, quad, a.dark, a.slots)
+                    scores.append(s)
+                    infos.append(info)
+                valid = [s for s in scores if s > 0]
+                if len(valid) >= 1:
+                    avg_s = sum(valid) / len(valid)
+                    if avg_s > best_row[0]:
+                        best_row = (avg_s, y, h, (scores, infos))
+
+    if best_row[0] < a.min_score or best_row[1] is None:
         raise SystemExit("nothing scored well enough. Lower --min-score, or "
                          "annotate by hand with annotate_plates.py")
 
-    cands.sort(key=lambda c: -c[0])
-    keep = cands[:a.max_zones]
+    y, h = best_row[1], best_row[2]
+    scores, infos = best_row[3]
+    keep = []
+    for idx, ((xa, xb), s, info) in enumerate(zip(cols, scores, infos)):
+        if s >= a.min_score:
+            q = [[xa, y], [xb, y], [xb, y + h], [xa, y + h]]
+            keep.append((s, q, info))
+            print(f"  column {idx+1} (x {xa}-{xb}): score {s:.2f}  {info}")
+
+    if not keep:
+        raise SystemExit("no columns met min-score in best row")
+
+    keep = keep[:a.max_zones]
     json.dump({"video": a.video, "frame": a.frame,
                "plate_mm": a.plate_mm,
                "plates": [[[float(x), float(y)] for x, y in c[1]]
                           for c in keep],
                "auto": True,
-               "scores": [round(c[0], 3) for c in keep],
-               "info": [c[2] for c in keep]},
+               "scores": [round(float(c[0]), 3) for c in keep],
+               "info": [{k: float(v) if isinstance(v, (np.floating, np.integer)) else v for k, v in c[2].items()} for c in keep]},
               open(a.out, "w"), indent=2)
 
     vis = frame.copy()

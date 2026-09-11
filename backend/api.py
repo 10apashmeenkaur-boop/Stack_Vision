@@ -230,7 +230,7 @@ async def delete_zones(vid: str):
 
 @app.post("/api/videos/{vid}/autozones")
 async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
-    """Detect zones automatically using original autozone.py algorithm."""
+    """Detect zones automatically in a single horizontal row across columns."""
     scan_videos()
     v = VIDEOS.get(vid)
     if not v:
@@ -251,22 +251,60 @@ async def auto_zones(vid: str, frame: int = 100, px_per_mm: float = 2.0):
     vx = autozone.vertical_seams(img, roi)
     if len(vx) < 2:
         raise HTTPException(422, "no vertical seams found - annotate manually")
-    found = []
-    coarse = max(14, H // 40)
+    
+    cols = []
     for i in range(len(vx) - 1):
         xa, xb = vx[i], vx[i+1]
-        if xb - xa < 80:
-            continue
-        best = (-1, None, None)
-        for h in range(int(.10*H), int(.34*H), coarse):
-            for y in range(roi[1], roi[3] - h, coarse):
+        if xb - xa >= 80:
+            cols.append((xa, xb))
+    if not cols:
+        raise HTTPException(422, "no valid columns found - annotate manually")
+
+    coarse = max(10, H // 50)
+    best_row = (-1, None, None, None)
+    
+    for h in range(int(.10*H), int(.34*H), coarse):
+        for y in range(roi[1], roi[3] - h, coarse):
+            scores = []
+            infos = []
+            for xa, xb in cols:
                 q = [[xa, y], [xb, y], [xb, y+h], [xa, y+h]]
                 s, info = autozone.score(img, q, 0.35, 39)
-                if s > best[0]:
-                    best = (s, q, info)
-        if best[0] >= 0.55:
-            found.append({"quad": [[float(x), float(y)] for x, y in best[1]],
-                          "score": round(best[0], 3), "info": best[2]})
+                scores.append(s)
+                infos.append(info)
+            valid = [s for s in scores if s > 0]
+            if len(valid) == len(cols):
+                avg_s = sum(valid) / len(valid)
+                if avg_s > best_row[0]:
+                    best_row = (avg_s, y, h, (scores, infos))
+
+    if best_row[0] < 0.50:
+        for h in range(int(.10*H), int(.34*H), coarse):
+            for y in range(roi[1], roi[3] - h, coarse):
+                scores = []
+                infos = []
+                for xa, xb in cols:
+                    q = [[xa, y], [xb, y], [xb, y+h], [xa, y+h]]
+                    s, info = autozone.score(img, q, 0.35, 39)
+                    scores.append(s)
+                    infos.append(info)
+                valid = [s for s in scores if s > 0]
+                if len(valid) >= 1:
+                    avg_s = sum(valid) / len(valid)
+                    if avg_s > best_row[0]:
+                        best_row = (avg_s, y, h, (scores, infos))
+
+    found = []
+    if best_row[0] >= 0.50 and best_row[1] is not None:
+        y, h = best_row[1], best_row[2]
+        scores, infos = best_row[3]
+        for (xa, xb), s, info in zip(cols, scores, infos):
+            if s >= 0.50:
+                q = [[float(xa), float(y)], [float(xb), float(y)],
+                     [float(xb), float(y+h)], [float(xa), float(y+h)]]
+                clean_info = {k: float(val) if isinstance(val, (np.floating, np.integer)) else val for k, val in info.items()} if info else {}
+                found.append({"quad": q, "score": round(float(s), 3), "info": clean_info})
+
     if not found:
         raise HTTPException(422, "nothing scored well enough - annotate manually")
     VIDEOS[vid]["zones"] = {"plates": [f["quad"] for f in found],
