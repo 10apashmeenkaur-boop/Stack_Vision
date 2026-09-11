@@ -1,0 +1,4 @@
+frame,plate,open_pct,nominal_open_pct,slot_len_mm,mean_width_mm,wear_pct,verdict,n_holes_detected
+100,1,11.76,10.73,55.2,4.38,9.6,PASS,26
+100,2,14.87,10.92,56.2,5.44,36.1,WATCH,5
+100,3,10.63,6.8,35.0,6.25,56.3,REJECT,9

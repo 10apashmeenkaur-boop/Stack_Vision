@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hira Vision — Grate Slot Inspection</title>
+<style>
+  :root{
+    --bg:#0e1113; --panel:#171b1f; --line:#262c32;
+    --ink:#e8eaed; --dim:#8b949e;
+    --pass:#3fb950; --watch:#d29922; --reject:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);
+         display:flex;align-items:baseline;gap:16px}
+  h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.02em}
+  .sub{color:var(--dim);font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555;
+       display:inline-block;margin-right:6px}
+  .dot.on{background:var(--pass)}
+  main{padding:20px;max-width:1500px;margin:0 auto}
+  .views{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+        overflow:hidden}
+  .card h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;
+           color:var(--dim);margin:0;padding:10px 14px;
+           border-bottom:1px solid var(--line);font-weight:600}
+  .card img{width:100%;display:block;background:#000;min-height:200px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+         margin:16px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);
+        border-radius:8px;padding:14px 16px}
+  .stat .k{color:var(--dim);font-size:11px;text-transform:uppercase;
+           letter-spacing:.08em}
+  .stat .v{font-size:26px;font-weight:600;margin-top:4px;
+           font-variant-numeric:tabular-nums}
+  .zones{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap}
+  .zone{background:var(--panel);border:1px solid var(--line);
+        border-radius:8px;padding:10px 16px;min-width:150px}
+  .zone .n{color:var(--dim);font-size:11px}
+  .zone .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th{text-align:left;font-size:11px;text-transform:uppercase;
+     letter-spacing:.07em;color:var(--dim);padding:8px 14px;
+     border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:7px 14px;border-bottom:1px solid #1d2227}
+  tr:last-child td{border-bottom:none}
+  .badge{display:inline-block;padding:2px 9px;border-radius:11px;
+         font-size:11px;font-weight:600;letter-spacing:.03em}
+  .PASS{background:rgba(63,185,80,.14);color:var(--pass)}
+  .WATCH{background:rgba(210,153,34,.14);color:var(--watch)}
+  .REJECT{background:rgba(248,81,73,.14);color:var(--reject)}
+  .bar{height:5px;background:#20262c;border-radius:3px;overflow:hidden;
+       margin-top:12px}
+  .bar i{display:block;height:100%;background:var(--pass);width:0;
+         transition:width .2s}
+  a.btn{display:inline-block;margin-top:14px;padding:8px 16px;
+        background:var(--panel);border:1px solid var(--line);
+        border-radius:6px;color:var(--ink);text-decoration:none;font-size:13px}
+  a.btn:hover{border-color:#3d444d}
+  .empty{color:var(--dim);padding:20px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Hira Vision</h1>
+  <span class="sub">Grate slot inspection · open-area gauge</span>
+  <span class="sub" style="margin-left:auto">
+    <span class="dot" id="dot"></span><span id="conn">connecting</span>
+  </span>
+</header>
+
+<main>
+  <div class="views">
+    <div class="card"><h2>Source</h2><img id="orig" alt=""></div>
+    <div class="card"><h2>Measured</h2><img id="anno" alt=""></div>
+  </div>
+
+  <div class="bar"><i id="prog"></i></div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Plates measured</div>
+      <div class="v" id="s-plates">—</div></div>
+    <div class="stat"><div class="k">Median slot width</div>
+      <div class="v" id="s-median">—</div></div>
+    <div class="stat"><div class="k">Rejected</div>
+      <div class="v" id="s-reject">—</div></div>
+    <div class="stat"><div class="k">Belt speed</div>
+      <div class="v" id="s-belt">—</div></div>
+  </div>
+
+  <div class="zones" id="zones"></div>
+
+  <div class="card">
+    <h2>Plate results</h2>
+    <table>
+      <thead><tr><th>Zone</th><th>Plate</th><th>Frames</th>
+        <th>Width (mm)</th><th>Std dev</th><th>Verdict</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">
+        Waiting for the first plate to pass through a zone…
+      </td></tr></tbody>
+    </table>
+  </div>
+
+  <a class="btn" href="/report.csv">Download CSV</a>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const NOMINAL = 4.0, REJECT = 6.0;
+let ws;
+
+function connect(){
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen  = () => { $('dot').className = 'dot on'; $('conn').textContent = 'live'; };
+  ws.onclose = () => { $('dot').className = 'dot';    $('conn').textContent = 'closed'; };
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'done'){ $('conn').textContent = `finished · ${d.plates} plates`; return; }
+
+    $('orig').src = 'data:image/jpeg;base64,' + d.original;
+    $('anno').src = 'data:image/jpeg;base64,' + d.annotated;
+    $('prog').style.width = d.total ? (100 * d.frame / d.total) + '%' : '0';
+
+    $('s-plates').textContent = d.summary.plates;
+    $('s-median').textContent = d.summary.median_mm ? d.summary.median_mm.toFixed(2) : '—';
+    $('s-reject').textContent = d.summary.plates ? d.summary.reject_pct + '%' : '—';
+    $('s-belt').textContent = d.belt_px.toFixed(1) + ' px/f';
+
+    $('zones').innerHTML = d.live.map(z => {
+      const mm = z.mm;
+      const col = mm == null ? 'var(--dim)'
+        : mm <= NOMINAL * 1.25 ? 'var(--pass)'
+        : mm <= REJECT ? 'var(--watch)' : 'var(--reject)';
+      return `<div class="zone"><div class="n">Zone ${z.zone} · ${z.n} frames</div>
+        <div class="v" style="color:${col}">${mm == null ? '—' : mm.toFixed(2) + ' mm'}</div></div>`;
+    }).join('');
+
+    if (d.results.length){
+      $('rows').innerHTML = d.results.slice().reverse().map(r =>
+        `<tr><td>${r.zone}</td><td>${r.plate}</td><td>${r.n_obs}</td>
+         <td>${r.width_mm.toFixed(2)}</td><td>${r.stdev_mm.toFixed(3)}</td>
+         <td><span class="badge ${r.verdict}">${r.verdict}</span></td></tr>`).join('');
+    }
+  };
+}
+connect();
+</script>
+</body>
+</html>

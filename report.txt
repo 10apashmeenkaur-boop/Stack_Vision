@@ -1,0 +1,24 @@
+HIRA GRATE INSPECTION
+==============================================
+source            : test_clip_03.mp4
+plates x frames   : 1 measurements
+holes measured    : 2
+
+CALIBRATION
+  planar homography per plate, 315 x 255 mm reference
+  scale 4.0 px/mm (1 px = 0.25 mm)
+  independent check: slot length vs drawing rows 62/79/62 mm
+  best validation this run: 6.9% off
+
+RESULT
+  plate medians   : 5.20 - 5.20 mm (spread 0.00 mm)
+  overall median  : 5.20 mm
+  plates flagged  : 1 of 1
+
+LIMITS
+  Width is the DARK OPENING and includes the slot chamfer, so it
+  reads wider than a caliper on the through-slot. Set --offset-mm
+  from one caliper measurement on a healthy plate to correct this.
+  Homography is per camera position - if a camera is moved, the
+  length validation will jump and the run flags itself UNVERIFIED.
+  Lens distortion is not corrected; that needs a chessboard set.
